@@ -302,7 +302,7 @@ with tab1:
     mask = pd.Series(True, index=tabdf.index)
 
     if swap_filter != "all":
-        mask &= tabdf["TX_TYPE_RAW"].str.lower() == swap_filter.lower()
+        mask &= tabdf["TX TYPE"].str.lower() == swap_filter.lower()
 
     if label_filter != "All":
         mask &= tabdf["SWAP TYPE"] == label_filter
@@ -346,7 +346,6 @@ with tab1:
     
     #--TABLE RENDERING
     filtered_df = filtered_df.sort_values(by=sort_col, ascending=(sort_dir == "Ascending"))
-    filtered_df = filtered_df.drop(columns=["TX_TYPE_RAW", "TIME"], errors="ignore")
     #ordering columns
     ordered_cols = [
         "BLOCK", "TX HASH", "MAKER", "TX TYPE", "SWAP TYPE", "TIME",
@@ -444,7 +443,13 @@ with tab1:
 
     # --- Render Everything ---
     with st.container():
-        st.dataframe(filtered_df, use_container_width=True)
+        styled_df = filtered_df.style.applymap(
+            lambda x: 'color: #74fe64; font-weight: bold;' if x == 'buy' else ('color: red; font-weight: bold;' if x == 'sell' else ''),
+            subset=['TX TYPE']
+        )
+
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
         st.title("")
         col1, col2, col3 = st.columns([1,2,2])
         with col1:
@@ -705,7 +710,17 @@ with tab2:
         "TXN FEES (ETH)"
     ]
     display_df = filtered_df[ordered_cols].rename(columns={"Wallet Short": "Wallet Address"})
-    st.dataframe(display_df, use_container_width=True)
+    def highlight_net_pnl(val):
+        if isinstance(val, (int, float)):
+            if val > 0:
+                return 'color: #74fe64; font-weight: bold;'
+            elif val < 0:
+                return 'color: red; font-weight: bold;'
+        return ''
+
+    styled_df = filtered_df.style.applymap(highlight_net_pnl, subset=["Net PnL ($)"])
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
 
 
     # KPIs
@@ -959,7 +974,16 @@ with tab2:
         "Wallet Display": "Wallet Address"
     })
 
-    st.dataframe(display_df, use_container_width=True)
+    def highlight_sniper(val):
+        if isinstance(val, str) and "Yes" in val:
+            return 'color: red; font-weight: bold;'
+        elif isinstance(val, str) and "No" in val:
+            return 'color: #74fe64; font-weight: bold;'
+        return ''
+
+    styled_df = display_df.style.applymap(highlight_sniper, subset=["Is Sniper"])
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
 
 
 
