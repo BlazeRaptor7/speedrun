@@ -43,7 +43,7 @@ st.markdown("""
     .stApp {
         width: 100vw;
         box-sizing: border-box;
-        background: #50759c;
+        background: #334a63;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -211,41 +211,49 @@ def extract_amount(row):
         return pd.Series([row.get(token_in_col), row.get(virtual_out_col)])
     return pd.Series([None, None])
 
+# Step 1: Extract TokenAmount and Virtual, round to 4 decimals
 tabdf[["TokenAmount", "Virtual"]] = tabdf.apply(extract_amount, axis=1)
-tabdf["TokenAmount"] = pd.to_numeric(tabdf["TokenAmount"]).round(4)
-tabdf["Virtual"] = pd.to_numeric(tabdf["Virtual"]).round(4)
+tabdf["TokenAmount"] = pd.to_numeric(tabdf["TokenAmount"], errors="coerce").round(4)
+tabdf["Virtual"] = pd.to_numeric(tabdf["Virtual"], errors="coerce").round(4)
 tabdf.rename(columns={"TokenAmount": token.upper()}, inplace=True)
 
-tabdf["txHash"] = tabdf["txHash"].apply(lambda tx: f"<a href='https://basescan.org/tx/{tx}' target='_blank'>Link to txn</a>")
-tabdf["swapType"] = tabdf["swapType"].apply(lambda x: f"<span style='color: {'#74fe64' if x == 'buy' else 'red'}; font-weight:bold'>{x}</span>")
-
-tabdf = tabdf[[
-    "blockNumber", "txHash", "maker", "swapType", "label", "timestampReadable",
-    token.upper(), "Virtual", "genesis_usdc_price", "genesis_virtual_price", "virtual_usdc_price", "Tax_1pct", "transactionFee"
+# Step 2: Select and rename required columns
+tabdf = tabdf[[ 
+    "blockNumber", "txHash", "maker", "swapType", "label", "timestampReadable", token.upper(), "Virtual", "genesis_usdc_price", "genesis_virtual_price", "virtual_usdc_price", "Tax_1pct", "transactionFee"
 ]].rename(columns={
-    "blockNumber": "BLOCK", "txHash": "TX HASH", "maker": "MAKER",
-    "swapType": "TX TYPE", "label": "SWAP TYPE", "timestampReadable": "TIME",
+    "blockNumber": "BLOCK",
+    "txHash": "TX HASH",
+    "maker": "MAKER",
+    "swapType": "TX TYPE",
+    "label": "SWAP TYPE",
+    "timestampReadable": "TIME",
     "Virtual": "VIRTUAL",
     "genesis_usdc_price": "GENESIS \nPRICE ($)",
     "genesis_virtual_price": "GENESIS PRICE \n($VIRTUAL)",
     "virtual_usdc_price": "VIRTUAL \nPRICE ($)",
     "Tax_1pct": "TAX (ETH)",
-    "transactionFee": f"TX FEE ({token.upper()})"})
-tabdf["MAKER"] = tabdf["MAKER"].apply(lambda addr: f"<span title='{addr}'>{addr[:5]}...{addr[-5:]}</span>" if isinstance(addr, str) else addr)
-tabdf["TIME_PARSED"] = pd.to_datetime(tabdf["TIME"], errors='coerce')
-tabdf["TX_TYPE_RAW"] = tabdf["TX TYPE"].str.extract(r">(\w+)<")
-tabdf["TRANSACTION VALUE ($)"] = (pd.to_numeric(tabdf[token.upper()], errors="coerce") * pd.to_numeric(tabdf["GENESIS \nPRICE ($)"], errors="coerce")).round(4)
-filtered_df = tabdf.copy()
+    "transactionFee": f"TX FEE ({token.upper()})"
+})
 
-sortable_columns = [
-    "BLOCK",                   # from "blockNumber"
-    "TIME",                    # from "timestampReadable"
-    "VIRTUAL",                 # from "Virtual"
-    "GENESIS \nPRICE ($)",     # from "genesis_usdc_price"
-    "GENESIS PRICE \n($VIRTUAL)", # from "genesis_virtual_price"
-    "VIRTUAL \nPRICE ($)",     # from "virtual_usdc_price"
-    "TAX (ETH)",f"TX FEE ({token.upper()})"
-]
+# Step 3: Transaction Value Calculation
+tabdf["TRANSACTION VALUE ($)"] = (
+    pd.to_numeric(tabdf[token.upper()], errors="coerce") *
+    pd.to_numeric(tabdf["GENESIS \nPRICE ($)"], errors="coerce")
+).round(4)
+
+# Step 4: Parse TIME as datetime
+tabdf["TIME"] = pd.to_datetime(tabdf["TIME"], errors="coerce")
+
+# Step 5: Minimal display formatting — no HTML tags
+tabdf["TX HASH"] = tabdf["TX HASH"].astype(str).str[:8] + "..." + tabdf["TX HASH"].astype(str).str[-4:]
+tabdf["MAKER"] = tabdf["MAKER"].apply(lambda addr: f"{addr[:5]}...{addr[-5:]}" if isinstance(addr, str) else addr)
+tabdf["TX TYPE"] = tabdf["TX TYPE"].astype(str)
+
+# Step 6: Sortable Columns
+sortable_columns = ["BLOCK", "TIME", token.upper(), "VIRTUAL", "GENESIS \nPRICE ($)", "TRANSACTION VALUE ($)", "GENESIS PRICE \n($VIRTUAL)", "VIRTUAL \nPRICE ($)", "TAX (ETH)", f"TX FEE ({token.upper()})"]
+
+# Final filtered_df copy
+filtered_df = tabdf.copy()
 
 tab1, tab2, tab3 = st.tabs(["TRANSCTIONS", "SNIPER INSIGHTS", "OTHER"])
 
@@ -265,7 +273,11 @@ with tab1:
     
         with col3:
             st.markdown("<div style='color: white; font-weight: 500;'>Date Range</div>", unsafe_allow_html=True)
-            date_range = st.date_input("", value=(tabdf["TIME_PARSED"].min(), tabdf["TIME_PARSED"].max()))
+            date_range = st.date_input(
+                "",
+                value=(tabdf["TIME"].min(), tabdf["TIME"].max())
+            )
+
     
         with col4:
             st.markdown("<div style='color: white; font-weight: 500;'>Sort by</div>", unsafe_allow_html=True)
@@ -287,14 +299,28 @@ with tab1:
                 ]
     
     # ───── Apply Filters ─────
+    mask = pd.Series(True, index=tabdf.index)
+
     if swap_filter != "all":
-        filtered_df = filtered_df[filtered_df["TX_TYPE_RAW"].str.lower() == swap_filter.lower()]
+        mask &= tabdf["TX_TYPE_RAW"].str.lower() == swap_filter.lower()
+
     if label_filter != "All":
-        filtered_df = filtered_df[filtered_df["SWAP TYPE"] == label_filter]
+        mask &= tabdf["SWAP TYPE"] == label_filter
+
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]) + timedelta(days=1)
+        mask &= (tabdf["TIME"] >= start_date) & (tabdf["TIME"] <= end_date)
+
+    filtered_df = tabdf.loc[mask].copy()
+
     if isinstance(date_range, tuple) and len(date_range) == 2:
         start_date = pd.to_datetime(date_range[0])
         end_date = pd.to_datetime(date_range[1]) + timedelta(days=1)
-        filtered_df = filtered_df[(filtered_df["TIME_PARSED"] >= start_date) & (filtered_df["TIME_PARSED"] <= end_date)]
+        filtered_df["TIME"] = pd.to_datetime(filtered_df["TIME"], errors='coerce')
+        filtered_df = filtered_df[
+            (filtered_df["TIME"] >= start_date) & (filtered_df["TIME"] <= end_date)
+        ]
+
     
     # ───── Filters: Panel 2 (Numeric Range) ─────
     with st.container():
@@ -320,7 +346,7 @@ with tab1:
     
     #--TABLE RENDERING
     filtered_df = filtered_df.sort_values(by=sort_col, ascending=(sort_dir == "Ascending"))
-    filtered_df = filtered_df.drop(columns=["TX_TYPE_RAW", "TIME_PARSED"], errors="ignore")
+    filtered_df = filtered_df.drop(columns=["TX_TYPE_RAW", "TIME"], errors="ignore")
     #ordering columns
     ordered_cols = [
         "BLOCK", "TX HASH", "MAKER", "TX TYPE", "SWAP TYPE", "TIME",
@@ -329,7 +355,7 @@ with tab1:
     ]
     filtered_df = filtered_df[[col for col in ordered_cols if col in filtered_df.columns]]
     
-    tabdf["date"] = tabdf["TIME_PARSED"].dt.date
+    tabdf["date"] = tabdf["TIME"].dt.date
     volume_df = tabdf.groupby("date")[token.upper()].sum().reset_index()
     # --- KPI METRICS ---
     with st.container():
@@ -344,19 +370,19 @@ with tab1:
             unique_makers = tabdf["MAKER_CLEAN"].nunique()
             
             sell_volume_usd = (
-                tabdf[tabdf["TX_TYPE_RAW"] == "sell"][token.upper()] *
-                tabdf[tabdf["TX_TYPE_RAW"] == "sell"]["GENESIS \nPRICE ($)"]
+                tabdf[tabdf["TX TYPE"] == "sell"][token.upper()] *
+                tabdf[tabdf["TX TYPE"] == "sell"]["GENESIS \nPRICE ($)"]
             ).sum()
             
             buy_volume_usd = (
-                tabdf[tabdf["TX_TYPE_RAW"] == "buy"][token.upper()] *
-                tabdf[tabdf["TX_TYPE_RAW"] == "buy"]["GENESIS \nPRICE ($)"]
+                tabdf[tabdf["TX TYPE"] == "buy"][token.upper()] *
+                tabdf[tabdf["TX TYPE"] == "buy"]["GENESIS \nPRICE ($)"]
             ).sum()
             
         tabdf["MAKER_CLEAN"] = tabdf["MAKER"].str.replace(r"<.*?>", "", regex=True)
         # BUYERS: Group by address, compute total USD bought
         buyers = (
-            tabdf[tabdf["TX_TYPE_RAW"] == "buy"]
+            tabdf[tabdf["TX TYPE"] == "buy"]
             .groupby("MAKER_CLEAN")
             .apply(lambda df: (df[token.upper()] * df["GENESIS \nPRICE ($)"]).sum())
             .nlargest(10)
@@ -365,7 +391,7 @@ with tab1:
 
         # SELLERS: Group by address, compute total USD sold
         sellers = (
-            tabdf[tabdf["TX_TYPE_RAW"] == "sell"]
+            tabdf[tabdf["TX TYPE"] == "sell"]
             .groupby("MAKER_CLEAN")
             .apply(lambda df: (df[token.upper()] * df["GENESIS \nPRICE ($)"]).sum())
             .nlargest(10)
@@ -436,7 +462,7 @@ with tab1:
             st.altair_chart(chart_sellers, use_container_width=True)
         st.subheader("SWAP VOLUME OVER TIME")
         st.altair_chart(chart, use_container_width=True)
-
+#-----TAB2 : SNIPER INSIGHTS WITH PNL-----
 with tab2:
 
     # ───── Token from Query Params ─────
@@ -618,14 +644,14 @@ with tab2:
                 "Net PnL ($)": round(realized, 4),
                 "Unrealized PnL ($)": round(unrealized, 4),
                 "Remaining Tokens": float(f"{remaining:.4f}"),
-                "Txn Count\n(BUY)": buy_txn_count,
-                "Txn Count\n(SELL)": sell_txn_count,
+                "BUY COUNT": buy_txn_count,
+                "SELL COUNT": sell_txn_count,
                 "First Buy Time": first_buy_time,
                 "Last Sell Time": last_sell_time,
                 "Average Buy Price ($)": round(avg_buy_price, 4),
                 "Average Sell Price ($)": round(avg_sell_price, 4),
                 "Total Tax Paid": round(total_tax_paid, 4),
-                "Total Tx Fees Paid (ETH)": round(total_tx_fees, 4)
+                "TXN FEES (ETH)": round(total_tx_fees, 4)
             })
         print("Returning results with rows:", len(results))
         print("Result keys:", results[0].keys() if results else "No results")
@@ -657,42 +683,29 @@ with tab2:
     #filtered_df["S.No"] = range(1, len(filtered_df) + 1)
     # Ensure correct renaming & styling
 
-    filtered_df["Wallet Display"] = filtered_df["Wallet Address"].apply(
-        lambda addr: f"<span title='{addr}'>{addr[:5]}...{addr[-5:]}</span>" if isinstance(addr, str) else addr
+    filtered_df["Wallet Short"] = filtered_df["Wallet Address"].apply(
+        lambda addr: f"{addr[:5]}...{addr[-5:]}" if isinstance(addr, str) else addr
     )
-    filtered_df["Net PnL ($)_styled"] = filtered_df["Net PnL ($)"].apply(
-        lambda x: f"<span style='color: {'#74fe64' if x >= 0 else 'red'}; font-weight:bold'>{x:.4f}</span>" if pd.notnull(x) else ""
-    )
+    filtered_df["Net PnL ($)"] = filtered_df["Net PnL ($)"].round(4)
+
 
     # Now define ordered_cols safely
     ordered_cols = [
-        "Wallet Display",
-        "Net PnL ($)_styled",
+        "Wallet Short",
+        "Net PnL ($)",
         "Unrealized PnL ($)",
         "Remaining Tokens",
-        "Txn Count\n(BUY)",
-        "Txn Count\n(SELL)",
+        "BUY COUNT",
+        "SELL COUNT",
         "First Buy Time",
         "Last Sell Time",
         "Average Buy Price ($)",
         "Average Sell Price ($)",
         "Total Tax Paid",
-        "Total Tx Fees Paid (ETH)"
+        "TXN FEES (ETH)"
     ]
-
-    # Validate column presence before rendering
-    missing_cols = [col for col in ordered_cols if col not in filtered_df.columns]
-    if missing_cols:
-        st.error(f"Missing columns: {missing_cols}")
-    else:
-        display_df = (
-            filtered_df[ordered_cols]
-            .rename(columns={
-                "Wallet Display": "Wallet Address",
-                "Net PnL ($)_styled": "Net PnL ($)"
-            })
-        )
-        st.dataframe(display_df, use_container_width=True)
+    display_df = filtered_df[ordered_cols].rename(columns={"Wallet Short": "Wallet Address"})
+    st.dataframe(display_df, use_container_width=True)
 
 
     # KPIs
@@ -896,18 +909,18 @@ with tab2:
     # Add "Is Sniper" column
     sniper_wallets = set(potential_sniper_df["maker"].unique())
     pnl_all_df["Is Sniper"] = pnl_all_df["Wallet Address"].apply(
-        lambda addr: f"<span style='color:red;font-weight:bold'>Yes</span>" if addr in sniper_wallets else f"<span style='color:#74fe64;font-weight:bold'>No</span>"
+        lambda addr: "Yes" if addr in sniper_wallets else "No"
     )
+
 
     # Wallet shortening
     pnl_all_df["Wallet Display"] = pnl_all_df["Wallet Address"].apply(
-        lambda a: f"<span title='{a}'>{a[:5]}...{a[-5:]}</span>"
+        lambda addr: f"{addr[:5]}...{addr[-5:]}" if isinstance(addr, str) else addr
     )
 
+
     # Style Net PnL
-    pnl_all_df["Net PnL ($)_styled"] = pnl_all_df["Net PnL ($)"].apply(
-        lambda x: f"<span style='color:{'#74fe64' if x >= 0 else 'red'}; font-weight:bold'>${x:.2f}</span>"
-    )
+    pnl_all_df["Net PnL ($)"] = pnl_all_df["Net PnL ($)"].round(4)
 
     # Total Buys and Sells in USD
     def get_total_usd(tx_df, maker, token, tx_type):
@@ -935,21 +948,20 @@ with tab2:
 
     # Final column order
     display_cols = [
-        "Rank", "Wallet Address", "Is Sniper", "Net PnL ($)_styled", "Number of Trades", "Total Buys (USD)", "Total Sells (USD)"
+        "Rank", "Wallet Address", "Is Sniper", "Net PnL ($)", "Number of Trades",
+        "Total Buys (USD)", "Total Sells (USD)"
     ]
+
     pnl_all_df = pnl_all_df.sort_values(by="Net PnL ($)", ascending=False).head(50)
-    # Render table
-    html_all_pnl = (
-        pnl_all_df[display_cols]
-        .rename(columns={
-            "Wallet Display": "Wallet Address",
-            "Net PnL ($)_styled": "Net PnL"
-        })
-        .to_html(escape=False, index=False, float_format="%.4f")
-    )
+
+    # Rename Wallet Display → Wallet Address (final table shows shortened version cleanly)
+    display_df = pnl_all_df[display_cols].rename(columns={
+        "Wallet Display": "Wallet Address"
+    })
+
+    st.dataframe(display_df, use_container_width=True)
 
 
-    st.markdown(f"<div class='scrollable'>{html_all_pnl}</div>", unsafe_allow_html=True)
 
 with tab3:
         st.header("MORE INSIGHTS INCOMING, STAY TUNED!")
