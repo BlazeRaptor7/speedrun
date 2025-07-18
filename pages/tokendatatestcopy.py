@@ -43,7 +43,7 @@ st.markdown("""
     .stApp {
         width: 100vw;
         box-sizing: border-box;
-        background: radial-gradient(circle, rgba(18, 73, 97, 1) 0%, rgba(5, 27, 64, 1) 100%);
+        background: #50759c;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -328,8 +328,6 @@ with tab1:
         "GENESIS PRICE \n($VIRTUAL)", "VIRTUAL \nPRICE ($)", "TAX (ETH)", f"TX FEE ({token.upper()})"
     ]
     filtered_df = filtered_df[[col for col in ordered_cols if col in filtered_df.columns]]
-
-    st.dataframe(filtered_df, use_container_width=True, float_format="%.8f")
     
     tabdf["date"] = tabdf["TIME_PARSED"].dt.date
     volume_df = tabdf.groupby("date")[token.upper()].sum().reset_index()
@@ -420,7 +418,7 @@ with tab1:
 
     # --- Render Everything ---
     with st.container():
-        st.dataframe(filtered_df, use_container_width=True, float_format="%.8f")
+        st.dataframe(filtered_df, use_container_width=True)
         st.title("")
         col1, col2, col3 = st.columns([1,2,2])
         with col1:
