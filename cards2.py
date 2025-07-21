@@ -278,12 +278,3 @@ def render_token_cards_from_docs(docs, num_cols=5):
 # FETCH AND RENDER
 all_docs = fetch_token_docs(db)
 render_token_cards_from_docs(all_docs)
-
-#CALLING HELPER FUNCTIONS
-# 1. Default Dates
-today = datetime.now().date()
-default_start = date(2024, 1, 1)
-start_date = start_date or default_start
-end_date = end_date or today
-# Use predefined list of 21 tokens
-render_token_cards_from_docs(filtered_tokens, all_docs)
