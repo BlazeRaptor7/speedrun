@@ -16,13 +16,7 @@ load_dotenv()
 
 dbconn = os.getenv("MongoLink")
 client = MongoClient(dbconn)
-try:
-    st.write("✅ Connected successfully!")
-    st.write("Databases available:", client.list_database_names())
-    db = client['genesis_tokens_swap_info']
-    st.write("Collections in genesis_tokens_swap_info:", db.list_collection_names())
-except Exception as e:
-    st.error(f"❌ Connection failed: {e}")
+db = client['genesis_tokens_swap_info']
 
 # UI elements
 # --GLOBAL CSS
@@ -203,79 +197,84 @@ with h2:
                 sort_option = st.selectbox("Sort by", ["Launch Date", "Token Name"], key="sort_field")
             with sort_row2:
                 sort_order = st.radio("Order", ["Descending", "Ascending"], horizontal=True, key="sort_order")
+
+
 #--MODULARIZATION
 #--DATA FETCHING
-# TOKEN COLLECTION SETUP
-token_collection = ['jarvis_swap', 'tian_swap', 'badai_swap', 'aispace_swap', 'wint_swap']
-token_map = {
-    'jarvis_swap': 'JARVIS',
-    'tian_swap': 'TIAN',
-    'badai_swap': 'BADAI',
-    'aispace_swap': 'AISPACE',
-    'wint_swap': 'WINT'
-}
+def get_token_list(db):
+    return [doc["token_symbol"] for doc in db["swap_progress"].find({}, {'token_symbol': 1, '_id': 0}).sort("token_symbol", 1)]
+#--RENDERING TOKEN CARDS
 
-# SHORTEN ADDRESS FUNCTION
 def shorten(addr):
     if isinstance(addr, str) and addr.startswith("0x") and len(addr) > 10:
         return addr[:6] + "..." + addr[-4:]
     return addr
 
-# FETCH TOKEN DOCUMENTS DIRECTLY FROM COLLECTIONS
-def fetch_token_docs(db):
-    docs = []
-    for collection in token_collection:
-        token = token_map.get(collection, collection.replace("_swap", "").upper())
-        col = db[collection]
+# Fetch all docs once
+all_docs = list(db["swap_progress"].find({}))
+# Correct filtering from swap_progress using token_collection
+token_collection = ['jarvis_swap', 'tian_swap', 'badai_swap', 'aispace_swap', 'wint_swap']
+# Normalize to lowercase for matching
+allowed_symbols = {col.replace("_swap", "").lower() for col in token_collection}
 
-        first_doc = col.find_one(sort=[("blockNumber", 1)])
-        if not first_doc:
-            continue
+filtered_tokens = [doc["token_symbol"]
+                   for doc in all_docs
+                   if doc.get("token_symbol", "").lower() in allowed_symbols]
 
-        launch_ts = first_doc.get("timestampReadable")
-        try:
-            launch_dt = datetime.strptime(launch_ts, "%Y-%m-%d %H:%M:%S")
-            launch_time = launch_dt.strftime('%d-%m-%Y %H:%M')
-        except:
-            launch_dt = None
-            launch_time = "N/A"
+# Sorting logic
+reverse_order = sort_order == "Descending"
+if sort_option == "Launch Time":
+    filtered_tokens = sorted(filtered_tokens, key=lambda t: next(
+        (d.get("updated_at") for d in all_docs if d.get("token_symbol") == t), datetime.min
+    ), reverse=reverse_order)
+else:
+    filtered_tokens = sorted(filtered_tokens, key=lambda t: t.lower(), reverse=reverse_order)
 
-        token_address = first_doc.get("token_address") or first_doc.get("maker") or "N/A"
+def render_token_cards_from_docs(token_list, all_docs, num_cols=5):
+    doc_map = {d["token_symbol"]: d for d in all_docs}
 
-        doc = {
-            "token_symbol": token,
-            "token_address": token_address,
-            "updated_at": launch_dt,
-            "launch_time": launch_time
-        }
-        docs.append(doc)
-    return docs
-
-# RENDER CARDS (NO CHANGE)
-def render_token_cards_from_docs(docs, num_cols=5):
-    for i in range(0, len(docs), num_cols):
-        chunk = docs[i:i + num_cols]
+    for i in range(0, len(token_list), num_cols):
+        chunk = token_list[i:i + num_cols]
         with st.container():
             cols = st.columns(num_cols, vertical_alignment="center")
-            for j, doc in enumerate(chunk):
+            for j, token in enumerate(chunk):
                 with cols[j]:
-                    name = doc["token_symbol"]
+                    doc = doc_map.get(token)
+                    if not doc:
+                        continue
+
+                    name = token
                     token_address = shorten(doc.get("token_address", "N/A"))
                     full_token_address = doc.get("token_address", "")
-                    launch_time = doc.get("launch_time", "N/A")
+                    updated_at = doc.get("updated_at")
+
+                    try:
+                        ts = (
+                            datetime.fromisoformat(updated_at["$date"].replace("Z", "+00:00"))
+                            if isinstance(updated_at, dict) and "$date" in updated_at
+                            else updated_at
+                        )
+                        launch_time = ts.strftime('%d-%m-%Y %H:%M')
+                    except:
+                        launch_time = "N/A"
 
                     card_html = f"""
                     <div class="card">
-                        <h1>{name}</h1>
+                        <h1>{token}</h1>
                         <p><b>Name:</b> {name}</p>
                         <p><b>Launch Time:</b> {launch_time}</p>
                         <p title="{full_token_address}"><b>Token:</b> {token_address}</p>
-                        <a href="/tokendatatestcopy?token={name}" target="_blank">See TXNs</a>
+                        <a href="/tokendatatestcopy?token={token}" target="_blank">See TXNs</a>
                     </div>
                     """
                     st.markdown(card_html, unsafe_allow_html=True)
                     st.write("")
 
-# FETCH AND RENDER CARDS
-all_docs = fetch_token_docs(db)
-render_token_cards_from_docs(all_docs)
+#CALLING HELPER FUNCTIONS
+# 1. Default Dates
+today = datetime.now().date()
+default_start = date(2024, 1, 1)
+start_date = start_date or default_start
+end_date = end_date or today
+# Use predefined list of 21 tokens
+render_token_cards_from_docs(filtered_tokens, all_docs)
