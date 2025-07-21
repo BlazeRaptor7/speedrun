@@ -17,6 +17,8 @@ load_dotenv()
 dbconn = os.getenv("MongoLink")
 client = MongoClient(dbconn)
 db = client['genesis_tokens_swap_info']
+st.write(client.list_database_names())
+
 
 # UI elements
 # --GLOBAL CSS
