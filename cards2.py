@@ -16,9 +16,13 @@ load_dotenv()
 
 dbconn = os.getenv("MongoLink")
 client = MongoClient(dbconn)
-db = client['genesis_tokens_swap_info']
-st.write(client.list_database_names())
-
+try:
+    st.write("✅ Connected successfully!")
+    st.write("Databases available:", client.list_database_names())
+    db = client['genesis_tokens_swap_info']
+    st.write("Collections in genesis_tokens_swap_info:", db.list_collection_names())
+except Exception as e:
+    st.error(f"❌ Connection failed: {e}")
 
 # UI elements
 # --GLOBAL CSS
