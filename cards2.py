@@ -203,14 +203,10 @@ with h2:
                 sort_option = st.selectbox("Sort by", ["Launch Date", "Token Name"], key="sort_field")
             with sort_row2:
                 sort_order = st.radio("Order", ["Descending", "Ascending"], horizontal=True, key="sort_order")
-
-
 #--MODULARIZATION
 #--DATA FETCHING
-# TOKEN COLLECTIONS
+# TOKEN COLLECTION SETUP
 token_collection = ['jarvis_swap', 'tian_swap', 'badai_swap', 'aispace_swap', 'wint_swap']
-
-# Map collection name to token symbol
 token_map = {
     'jarvis_swap': 'JARVIS',
     'tian_swap': 'TIAN',
@@ -218,45 +214,44 @@ token_map = {
     'aispace_swap': 'AISPACE',
     'wint_swap': 'WINT'
 }
-#--RENDERING TOKEN CARDS
 
+# SHORTEN ADDRESS FUNCTION
 def shorten(addr):
     if isinstance(addr, str) and addr.startswith("0x") and len(addr) > 10:
         return addr[:6] + "..." + addr[-4:]
     return addr
-# FETCH INFO FROM SWAP COLLECTIONS
+
+# FETCH TOKEN DOCUMENTS DIRECTLY FROM COLLECTIONS
 def fetch_token_docs(db):
     docs = []
     for collection in token_collection:
         token = token_map.get(collection, collection.replace("_swap", "").upper())
         col = db[collection]
 
-        # Get earliest swap document (assumed to be launch time)
         first_doc = col.find_one(sort=[("blockNumber", 1)])
         if not first_doc:
             continue
 
-        # Launch time from earliest tx
         launch_ts = first_doc.get("timestampReadable")
         try:
             launch_dt = datetime.strptime(launch_ts, "%Y-%m-%d %H:%M:%S")
             launch_time = launch_dt.strftime('%d-%m-%Y %H:%M')
         except:
+            launch_dt = None
             launch_time = "N/A"
 
-        # Token address from first_doc, fallback to 'maker'
         token_address = first_doc.get("token_address") or first_doc.get("maker") or "N/A"
 
         doc = {
             "token_symbol": token,
             "token_address": token_address,
-            "updated_at": launch_dt if launch_time != "N/A" else None,
+            "updated_at": launch_dt,
             "launch_time": launch_time
         }
         docs.append(doc)
     return docs
 
-# RENDER FUNCTION (UNTOUCHED)
+# RENDER CARDS (NO CHANGE)
 def render_token_cards_from_docs(docs, num_cols=5):
     for i in range(0, len(docs), num_cols):
         chunk = docs[i:i + num_cols]
@@ -281,6 +276,6 @@ def render_token_cards_from_docs(docs, num_cols=5):
                     st.markdown(card_html, unsafe_allow_html=True)
                     st.write("")
 
-# FETCH AND RENDER
+# FETCH AND RENDER CARDS
 all_docs = fetch_token_docs(db)
 render_token_cards_from_docs(all_docs)
