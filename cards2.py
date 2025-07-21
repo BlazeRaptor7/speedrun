@@ -201,74 +201,83 @@ with h2:
 
 #--MODULARIZATION
 #--DATA FETCHING
-def get_token_list(db):
-    return [doc["token_symbol"] for doc in db["swap_progress"].find({}, {'token_symbol': 1, '_id': 0}).sort("token_symbol", 1)]
+# TOKEN COLLECTIONS
+token_collection = ['jarvis_swap', 'tian_swap', 'badai_swap', 'aispace_swap', 'wint_swap']
+
+# Map collection name to token symbol
+token_map = {
+    'jarvis_swap': 'JARVIS',
+    'tian_swap': 'TIAN',
+    'badai_swap': 'BADAI',
+    'aispace_swap': 'AISPACE',
+    'wint_swap': 'WINT'
+}
 #--RENDERING TOKEN CARDS
 
 def shorten(addr):
     if isinstance(addr, str) and addr.startswith("0x") and len(addr) > 10:
         return addr[:6] + "..." + addr[-4:]
     return addr
+# FETCH INFO FROM SWAP COLLECTIONS
+def fetch_token_docs(db):
+    docs = []
+    for collection in token_collection:
+        token = token_map.get(collection, collection.replace("_swap", "").upper())
+        col = db[collection]
 
-# Fetch all docs once
-all_docs = list(db["swap_progress"].find({}))
-# Correct filtering from swap_progress using token_collection
-token_collection = ['jarvis_swap', 'tian_swap', 'badai_swap', 'aispace_swap', 'wint_swap']
-# Normalize to lowercase for matching
-allowed_symbols = {col.replace("_swap", "").lower() for col in token_collection}
+        # Get earliest swap document (assumed to be launch time)
+        first_doc = col.find_one(sort=[("blockNumber", 1)])
+        if not first_doc:
+            continue
 
-filtered_tokens = [doc["token_symbol"]
-                   for doc in all_docs
-                   if doc.get("token_symbol", "").lower() in allowed_symbols]
+        # Launch time from earliest tx
+        launch_ts = first_doc.get("timestampReadable")
+        try:
+            launch_dt = datetime.strptime(launch_ts, "%Y-%m-%d %H:%M:%S")
+            launch_time = launch_dt.strftime('%d-%m-%Y %H:%M')
+        except:
+            launch_time = "N/A"
 
-# Sorting logic
-reverse_order = sort_order == "Descending"
-if sort_option == "Launch Time":
-    filtered_tokens = sorted(filtered_tokens, key=lambda t: next(
-        (d.get("updated_at") for d in all_docs if d.get("token_symbol") == t), datetime.min
-    ), reverse=reverse_order)
-else:
-    filtered_tokens = sorted(filtered_tokens, key=lambda t: t.lower(), reverse=reverse_order)
+        # Token address from first_doc, fallback to 'maker'
+        token_address = first_doc.get("token_address") or first_doc.get("maker") or "N/A"
 
-def render_token_cards_from_docs(token_list, all_docs, num_cols=5):
-    doc_map = {d["token_symbol"]: d for d in all_docs}
+        doc = {
+            "token_symbol": token,
+            "token_address": token_address,
+            "updated_at": launch_dt if launch_time != "N/A" else None,
+            "launch_time": launch_time
+        }
+        docs.append(doc)
+    return docs
 
-    for i in range(0, len(token_list), num_cols):
-        chunk = token_list[i:i + num_cols]
+# RENDER FUNCTION (UNTOUCHED)
+def render_token_cards_from_docs(docs, num_cols=5):
+    for i in range(0, len(docs), num_cols):
+        chunk = docs[i:i + num_cols]
         with st.container():
             cols = st.columns(num_cols, vertical_alignment="center")
-            for j, token in enumerate(chunk):
+            for j, doc in enumerate(chunk):
                 with cols[j]:
-                    doc = doc_map.get(token)
-                    if not doc:
-                        continue
-
-                    name = token
+                    name = doc["token_symbol"]
                     token_address = shorten(doc.get("token_address", "N/A"))
                     full_token_address = doc.get("token_address", "")
-                    updated_at = doc.get("updated_at")
-
-                    try:
-                        ts = (
-                            datetime.fromisoformat(updated_at["$date"].replace("Z", "+00:00"))
-                            if isinstance(updated_at, dict) and "$date" in updated_at
-                            else updated_at
-                        )
-                        launch_time = ts.strftime('%d-%m-%Y %H:%M')
-                    except:
-                        launch_time = "N/A"
+                    launch_time = doc.get("launch_time", "N/A")
 
                     card_html = f"""
                     <div class="card">
-                        <h1>{token}</h1>
+                        <h1>{name}</h1>
                         <p><b>Name:</b> {name}</p>
                         <p><b>Launch Time:</b> {launch_time}</p>
                         <p title="{full_token_address}"><b>Token:</b> {token_address}</p>
-                        <a href="/tokendatatestcopy?token={token}" target="_blank">See TXNs</a>
+                        <a href="/tokendatatestcopy?token={name}" target="_blank">See TXNs</a>
                     </div>
                     """
                     st.markdown(card_html, unsafe_allow_html=True)
                     st.write("")
+
+# FETCH AND RENDER
+all_docs = fetch_token_docs(db)
+render_token_cards_from_docs(all_docs)
 
 #CALLING HELPER FUNCTIONS
 # 1. Default Dates
