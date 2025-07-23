@@ -565,7 +565,7 @@ with tab2:
             maker = row["maker"]
             token = row["token_name"]
             df = combined_df[(combined_df["maker"] == maker) & (combined_df["token_name"] == token)]
-            df = df.sort_values(by="timestamp")
+            df = df.sort_values(by="timestampReadable")
             trades = defaultdict(list)
             # Dynamic field names based on token
             out_before_tax_col = f"{token}_OUT_BeforeTax"
@@ -632,7 +632,7 @@ with tab2:
                             })
             # summing leftover tokens for unrealized
             remaining = sum(b["amount"] for b in buy_queue)
-            latest_price = combined_df[combined_df["token_name"] == token].sort_values(by="timestamp", ascending=False).head(1)["genesis_usdc_price"].values[0]
+            latest_price = combined_df[combined_df["token_name"] == token].sort_values(by="timestampReadable", ascending=False).head(1)["genesis_usdc_price"].values[0]
             unrealized = remaining * latest_price
 
             results.append({
@@ -816,7 +816,7 @@ with tab2:
         for _, row in wallet_pairs.iterrows():
             maker = row["maker"]
             token = row["token_name"]
-            user_df = df[(df["maker"] == maker) & (df["token_name"] == token)].sort_values(by="timestamp")
+            user_df = df[(df["maker"] == maker) & (df["token_name"] == token)].sort_values(by="timestampReadable")
             trades = defaultdict(list)
 
             # Dynamic fields
@@ -874,7 +874,7 @@ with tab2:
                             })
 
             remaining = sum(b["amount"] for b in buy_queue)
-            latest_price = df[df["token_name"] == token].sort_values(by="timestamp", ascending=False).head(1)["genesis_usdc_price"].values[0]
+            latest_price = df[df["token_name"] == token].sort_values(by="timestampReadable", ascending=False).head(1)["genesis_usdc_price"].values[0]
             unrealized = remaining * latest_price
 
             results.append({
