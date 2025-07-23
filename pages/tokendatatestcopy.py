@@ -582,66 +582,66 @@ with tab2:
             total_tax_paid = df["Tax_1pct"].sum()
             total_tx_fees = df["transactionFee"].sum()
 
-        for _, tx in df.iterrows():
-                    token_prefix = tx["token_name"]
-                    if tx["swapType"] == "buy":
-                        out_before_tax = tx.get(f"{token_prefix}_OUT_BeforeTax", 0.0)
-                        out_after_tax = tx.get(f"{token_prefix}_OUT_AfterTax", 0.0)
-                        trades[maker].append({
-                            "type": "buy",
-                            "amount": out_after_tax,  # amount received after tax
-                            "amount_paid_for": out_before_tax,  # original amount paid for (before tax)
-                            "price": tx["genesis_usdc_price"]
-                        })
-                    elif tx["swapType"] == "sell":
-                        in_before_tax = tx.get(f"{token}_IN_BeforeTax", 0.0)
-                        in_after_tax = tx.get(f"{token}_IN_AfterTax", 0.0)
-                        trades[maker].append({
-                            "type": "sell",
-                            "amount_sold_net": in_after_tax,  # net amount sold (after tax)
-                            "from_wallet": in_before_tax,  # amount from wallet (before tax)
-                            "price": tx["genesis_usdc_price"]
-                        })
-                
-                buy_queue = deque()
-                realized = 0.0
-                
-        for tx in trades[maker]:
-            if tx["type"] == "buy":
-                buy_queue.append({
-                    "amount": tx["amount"],  # tokens received after tax
-                    "amount_paid_for": tx["amount_paid_for"],  # original USD amount paid
-                    "price": tx["price"]
-                })
-            elif tx["type"] == "sell":
-                to_match = tx["from_wallet"]  # tokens to sell (from wallet)
-                amount_sold_net = tx["amount_sold_net"]  # net tokens sold (after tax)
-                sell_price = tx["price"]
-                
-                while to_match > 0 and buy_queue:
-                    buy = buy_queue.popleft()
-                    match_amt = min(to_match, buy["amount"])
+            for _, tx in df.iterrows():
+                        token_prefix = tx["token_name"]
+                        if tx["swapType"] == "buy":
+                            out_before_tax = tx.get(f"{token_prefix}_OUT_BeforeTax", 0.0)
+                            out_after_tax = tx.get(f"{token_prefix}_OUT_AfterTax", 0.0)
+                            trades[maker].append({
+                                "type": "buy",
+                                "amount": out_after_tax,  # amount received after tax
+                                "amount_paid_for": out_before_tax,  # original amount paid for (before tax)
+                                "price": tx["genesis_usdc_price"]
+                            })
+                        elif tx["swapType"] == "sell":
+                            in_before_tax = tx.get(f"{token}_IN_BeforeTax", 0.0)
+                            in_after_tax = tx.get(f"{token}_IN_AfterTax", 0.0)
+                            trades[maker].append({
+                                "type": "sell",
+                                "amount_sold_net": in_after_tax,  # net amount sold (after tax)
+                                "from_wallet": in_before_tax,  # amount from wallet (before tax)
+                                "price": tx["genesis_usdc_price"]
+                            })
                     
-                    # Calculate matched cost using Version 1 logic
-                    ratio = match_amt / buy["amount"]
-                    matched_paid = buy["amount_paid_for"] * ratio
+                    buy_queue = deque()
+                    realized = 0.0
                     
-                    # Calculate proceeds using Version 1 logic with tax consideration
-                    proceeds_ratio = match_amt / tx["from_wallet"]
-                    actual_proceeds = amount_sold_net * sell_price * proceeds_ratio
-                    cost_paid = matched_paid * buy["price"]
+            for tx in trades[maker]:
+                if tx["type"] == "buy":
+                    buy_queue.append({
+                        "amount": tx["amount"],  # tokens received after tax
+                        "amount_paid_for": tx["amount_paid_for"],  # original USD amount paid
+                        "price": tx["price"]
+                    })
+                elif tx["type"] == "sell":
+                    to_match = tx["from_wallet"]  # tokens to sell (from wallet)
+                    amount_sold_net = tx["amount_sold_net"]  # net tokens sold (after tax)
+                    sell_price = tx["price"]
                     
-                    realized += actual_proceeds - cost_paid
-                    
-                    to_match -= match_amt
-                    leftover = buy["amount"] - match_amt
-                    if leftover > 0:
-                        remaining_paid = buy["amount_paid_for"] * (leftover / buy["amount"])
-                        buy_queue.appendleft({
-                            "amount": leftover,
-                            "amount_paid_for": remaining_paid,
-                            "price": buy["price"]
-                        })
+                    while to_match > 0 and buy_queue:
+                        buy = buy_queue.popleft()
+                        match_amt = min(to_match, buy["amount"])
+                        
+                        # Calculate matched cost using Version 1 logic
+                        ratio = match_amt / buy["amount"]
+                        matched_paid = buy["amount_paid_for"] * ratio
+                        
+                        # Calculate proceeds using Version 1 logic with tax consideration
+                        proceeds_ratio = match_amt / tx["from_wallet"]
+                        actual_proceeds = amount_sold_net * sell_price * proceeds_ratio
+                        cost_paid = matched_paid * buy["price"]
+                        
+                        realized += actual_proceeds - cost_paid
+                        
+                        to_match -= match_amt
+                        leftover = buy["amount"] - match_amt
+                        if leftover > 0:
+                            remaining_paid = buy["amount_paid_for"] * (leftover / buy["amount"])
+                            buy_queue.appendleft({
+                                "amount": leftover,
+                                "amount_paid_for": remaining_paid,
+                                "price": buy["price"]
+                            })
             # summing leftover tokens for unrealized
             remaining = sum(b["amount"] for b in buy_queue)
             latest_price = combined_df[combined_df["token_name"] == token].sort_values(by="timestampReadable", ascending=False).head(1)["genesis_usdc_price"].values[0]
