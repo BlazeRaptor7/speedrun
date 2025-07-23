@@ -606,7 +606,7 @@ with tab2:
             realized = 0.0
             for tx in trades[maker]:
                 if tx["type"] == "buy":
-                    amount_bought = tx["amount"]
+                    amount_bought = tx["cost"]
                     cost_in_usd = amount_bought * tx["price"]  # tokens * price per token
                     buy_queue.append({
                         "amount": amount_bought,
@@ -614,11 +614,11 @@ with tab2:
                         "price": tx["price"]
                     })
                 elif tx["type"] == "sell":
-                    to_match = tx["from_wallet"]  # tokens to sell
+                    to_match = tx["amount"]  # tokens to sell
                     while to_match > 0 and buy_queue:
                         buy = buy_queue.popleft()
                         match_amt = min(to_match, buy["amount"])
-                        matched_cost = buy["cost"] * (match_amt / buy["amount"])
+                        matched_cost = buy["cost"] * (match_amt / buy["cost"])
                         proceeds = match_amt * tx["price"]
                         realized += proceeds - matched_cost
                         to_match -= match_amt
