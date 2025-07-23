@@ -606,30 +606,35 @@ with tab2:
             realized = 0.0
             for tx in trades[maker]:
                 if tx["type"] == "buy":
+                    amount_bought = tx["amount"]
+                    cost_in_usd = amount_bought * tx["price"]  # tokens * price per token
                     buy_queue.append({
-                        "amount": tx["amount"],
-                        "cost": tx["cost"],
+                        "amount": amount_bought,
+                        "cost": cost_in_usd,
                         "price": tx["price"]
                     })
                 elif tx["type"] == "sell":
-                    to_match = tx["from_wallet"]
-                    proceeds = tx["from_wallet"] * tx["price"]
+                    to_match = tx["from_wallet"]  # tokens to sell
                     while to_match > 0 and buy_queue:
                         buy = buy_queue.popleft()
                         match_amt = min(to_match, buy["amount"])
-                        match_cost = buy["cost"] * (match_amt / buy["amount"])
-                        realized += proceeds * (match_amt / tx["price"]) - match_cost * buy["price"]
+                        matched_cost = buy["cost"] * (match_amt / buy["amount"])
+                        proceeds = match_amt * tx["price"]
+                        realized += proceeds - matched_cost
                         to_match -= match_amt
                         leftover = buy["amount"] - match_amt
                         if leftover > 0:
+                            leftover_cost = buy["cost"] * (leftover / buy["amount"])
                             buy_queue.appendleft({
                                 "amount": leftover,
-                                "cost": buy["cost"] * (leftover / buy["amount"]),
+                                "cost": leftover_cost,
                                 "price": buy["price"]
                             })
+            # summing leftover tokens for unrealized
             remaining = sum(b["amount"] for b in buy_queue)
             latest_price = combined_df[combined_df["token_name"] == token].sort_values(by="timestamp", ascending=False).head(1)["genesis_usdc_price"].values[0]
             unrealized = remaining * latest_price
+
             results.append({
                 "Wallet Address": maker,
                 "Net PnL ($)": round(realized, 4),
