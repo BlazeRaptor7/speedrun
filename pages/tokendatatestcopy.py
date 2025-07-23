@@ -659,6 +659,7 @@ with tab2:
             st.error("No data found for this token.")
             st.stop()
         token_launch_blocks = load_launch_blocks()
+        st.write(token_launch_blocks[0])
         potential_sniper_df, combined_df = process_sniper_data(combined_df, token_launch_blocks)
     pnl_df = calculate_pnl(potential_sniper_df, combined_df)
     if pnl_df.empty:
