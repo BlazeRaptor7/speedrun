@@ -603,8 +603,8 @@ with tab2:
                                 "price": tx["genesis_usdc_price"]
                             })
                     
-                    buy_queue = deque()
-                    realized = 0.0
+            buy_queue = deque()
+            realized = 0.0
                     
             for tx in trades[maker]:
                 if tx["type"] == "buy":
