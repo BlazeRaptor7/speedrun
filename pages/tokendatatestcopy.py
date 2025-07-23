@@ -469,10 +469,8 @@ with tab1:
         st.altair_chart(chart, use_container_width=True)
 #-----TAB2 : SNIPER INSIGHTS WITH PNL-----
 with tab2:
-
     # ───── Token from Query Params ─────
     token_upper = token.upper()
-
     # ───── Load Swap Data for Token ─────
     @st.cache_data(ttl=300)
     def load_swap_data(token):
@@ -485,8 +483,6 @@ with tab2:
         df["token_name"] = token.upper()
         df["timestampReadable"] = pd.to_datetime(df["timestampReadable"], errors='coerce')
         return df
-
-
     # ───── Launch Block (fallback logic) ─────
     @st.cache_data(ttl=600)
     def load_launch_blocks():
@@ -500,9 +496,8 @@ with tab2:
         except Exception as e:
             print("Error loading launch blocks:", e)
         return {}
-
     # ───── Sniper Detection Logic ─────
-    #@st.cache_data(ttl=300)
+    @st.cache_data(ttl=300)
     def process_sniper_data(combined_df, token_launch_blocks):
         buy_df = combined_df[combined_df["swapType"] == "buy"].copy()
         buy_df = buy_df.sort_values(by=["maker", "timestampReadable"])
@@ -560,9 +555,7 @@ with tab2:
         merged["time_diff"] = (merged["timestampReadable_sell"] - merged["timestampReadable_buy"]).dt.total_seconds()
         quick_sells = merged[merged["time_diff"].between(0, 20 * 60)]
         potential_sniper_df = df_sniper_buys[df_sniper_buys["maker"].isin(quick_sells["maker"])].copy()
-        #st.write("🔍 Potential sniper rows found:", len(potential_sniper_df))
         return potential_sniper_df, combined_df
-
     # ───── PnL Calculation ─────
     @st.cache_data(ttl=300)
     def calculate_pnl(potential_sniper_df, combined_df):
@@ -574,7 +567,6 @@ with tab2:
             df = combined_df[(combined_df["maker"] == maker) & (combined_df["token_name"] == token)]
             df = df.sort_values(by="timestamp")
             trades = defaultdict(list)
-
             # Dynamic field names based on token
             out_before_tax_col = f"{token}_OUT_BeforeTax"
             out_after_tax_col = f"{token}_OUT_AfterTax"
@@ -592,7 +584,6 @@ with tab2:
 
             for _, tx in df.iterrows():
                 token_prefix = tx["token_name"]
-                
                 if tx["swapType"] == "buy":
                     out_before_tax = tx.get(f"{token_prefix}_OUT_BeforeTax", 0.0)
                     out_after_tax = tx.get(f"{token_prefix}_OUT_AfterTax", 0.0)
@@ -602,7 +593,6 @@ with tab2:
                         "cost": out_before_tax,
                         "price": tx["genesis_usdc_price"]
                     })
-
                 elif tx["swapType"] == "sell":
                     in_before_tax = tx.get(f"{token}_IN_BeforeTax", 0.0)
                     in_after_tax = tx.get(f"{token}_IN_AfterTax", 0.0)
@@ -612,8 +602,6 @@ with tab2:
                         "from_wallet": in_before_tax,
                         "price": tx["genesis_usdc_price"]
                     })
-
-
             buy_queue = deque()
             realized = 0.0
             for tx in trades[maker]:
@@ -625,12 +613,12 @@ with tab2:
                     })
                 elif tx["type"] == "sell":
                     to_match = tx["from_wallet"]
-                    proceeds = tx["amount"] * tx["price"]
+                    proceeds = tx["from_wallet"] * tx["price"]
                     while to_match > 0 and buy_queue:
                         buy = buy_queue.popleft()
                         match_amt = min(to_match, buy["amount"])
                         match_cost = buy["cost"] * (match_amt / buy["amount"])
-                        realized += proceeds * (match_amt / tx["from_wallet"]) - match_cost * buy["price"]
+                        realized += proceeds * (match_amt / tx["price"]) - match_cost * buy["price"]
                         to_match -= match_amt
                         leftover = buy["amount"] - match_amt
                         if leftover > 0:
@@ -639,11 +627,9 @@ with tab2:
                                 "cost": buy["cost"] * (leftover / buy["amount"]),
                                 "price": buy["price"]
                             })
-
             remaining = sum(b["amount"] for b in buy_queue)
             latest_price = combined_df[combined_df["token_name"] == token].sort_values(by="timestamp", ascending=False).head(1)["genesis_usdc_price"].values[0]
             unrealized = remaining * latest_price
-
             results.append({
                 "Wallet Address": maker,
                 "Net PnL ($)": round(realized, 4),
@@ -660,11 +646,7 @@ with tab2:
             })
         print("Returning results with rows:", len(results))
         print("Result keys:", results[0].keys() if results else "No results")
-
         return pd.DataFrame(results)
-    #st.write("PnL DF Columns:", pnl_df.columns.tolist())
-
-
     # ───── Load and Process ─────
     with st.spinner("Loading data..."):
         combined_df = load_swap_data(token)
@@ -673,7 +655,6 @@ with tab2:
             st.stop()
         token_launch_blocks = load_launch_blocks()
         potential_sniper_df, combined_df = process_sniper_data(combined_df, token_launch_blocks)
-        
     pnl_df = calculate_pnl(potential_sniper_df, combined_df)
     if pnl_df.empty:
         st.markdown("### ❌ No Snipers Detected")
@@ -682,18 +663,12 @@ with tab2:
     # Streamlit UI
     st.title(f"Potential Snipers – PnL Overview for {token_upper}")
     st.subheader("📊 Sniper Summary Table")
-
     # Create filtered_df and add S.No once, cleanly
     filtered_df = pnl_df.copy().reset_index(drop=True)
-    #filtered_df["S.No"] = range(1, len(filtered_df) + 1)
-    # Ensure correct renaming & styling
-
     filtered_df["Wallet Short"] = filtered_df["Wallet Address"].apply(
         lambda addr: f"{addr[:5]}...{addr[-5:]}" if isinstance(addr, str) else addr
     )
     filtered_df["Net PnL ($)"] = filtered_df["Net PnL ($)"].round(4)
-
-
     # Now define ordered_cols safely
     ordered_cols = [
         "Wallet Short",
